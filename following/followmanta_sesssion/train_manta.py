@@ -1,10 +1,22 @@
+# Copyright 2025 Beijing Jiaotong University (BJTU). All rights reserved.
+
 from ultralytics import YOLO
 
-# Load a model
-# model = YOLO("yolov8n.yaml")  # build a new model from YAML
-model = YOLO("/home/nvidia/Downloads/yolov8s.pt")  # load a pretrained model (recommended for training)
-model.to("cuda")
-# model = YOLO("yolov8n.yaml").load("yolov8n.pt")  # build from YAML and transfer weights
+# --------------------------------------------------------------------------- #
+# Constants
+# --------------------------------------------------------------------------- #
+MODEL_PATH = "/home/nvidia/Downloads/yolov8s.pt"
+DATA_PATH = "/home/nvidia/new_rec2/followmanta_sesssion/mantaDataset/manta20240829.yaml"
+EPOCHS = 100
+IMGSZ = 640
+BATCH = 1
+DEVICE = "cuda"
+
+# --------------------------------------------------------------------------- #
+# Main
+# --------------------------------------------------------------------------- #
+model = YOLO(MODEL_PATH)  # Load a pretrained model
+model.to(DEVICE)  # Move model to GPU
 
 # Train the model
-results = model.train(data="/home/nvidia/new_rec2/followmanta_sesssion/mantaDataset/manta20240829.yaml", epochs=100, imgsz=640,batch=1)
+results = model.train(data=DATA_PATH, epochs=EPOCHS, imgsz=IMGSZ, batch=BATCH)

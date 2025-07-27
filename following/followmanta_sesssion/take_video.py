@@ -1,55 +1,72 @@
-# 调用双目摄像头录像，按q退出录制
+# Copyright 2025 Beijing Jiaotong University (BJTU). All rights reserved.
 
 import cv2
 import time
 
-cv2.namedWindow('left')
-cv2.namedWindow('right')
+# --------------------------------------------------------------------------- #
+# Constants
+# --------------------------------------------------------------------------- #
+CAPTURE_ID = -1
+FPS = 5.0
+RESOLUTION = (640, 640)
+OUTPUT_DIR = '/home/nvidia/new_rec2/followmanta_sesssion/log'
+FOURCC = cv2.VideoWriter_fourcc(*'DIVX')
+WINDOW_NAMES = ('left', 'right')
 
-cap = cv2.VideoCapture(-1)  # 打开摄像头，摄像头的ID不同设备上可能不同
+# --------------------------------------------------------------------------- #
+# Setup
+# --------------------------------------------------------------------------- #
+for name in WINDOW_NAMES:
+    cv2.namedWindow(name)
 
-# cap.set(cv2.CAP_PROP_FPS, 10)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640*2)  # 设置双目的宽度(整个双目相机的图像宽度)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 640)  # 设置双目的高度
+cap = cv2.VideoCapture(CAPTURE_ID)
+if not cap.isOpened():
+    raise RuntimeError('Cannot open camera.')
 
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, RESOLUTION[0] * 2)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, RESOLUTION[1])
 
-# 获取视频的帧率和尺寸
 fps = cap.get(cv2.CAP_PROP_FPS)
 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-print('----------', width, height, fps) #fps:nvidia:5 PC：30
+print(f'Camera info: {width}x{height}, {fps} fps')
 
+timestamp = time.ctime()
+left_writer = cv2.VideoWriter(
+    f'{OUTPUT_DIR}/left{timestamp}.avi', FOURCC, FPS, (width // 2, height)
+)
+right_writer = cv2.VideoWriter(
+    f'{OUTPUT_DIR}/right{timestamp}.avi', FOURCC, FPS, (width // 2, height)
+)
 
-fourcc = cv2.VideoWriter_fourcc(*'DIVX')  # fourcc编码为视频格式，avi对应编码为XVID
-left = cv2.VideoWriter(f'/home/nvidia/new_rec2/followmanta_sesssion/log/left{time.ctime()}.avi', fourcc, 5.0, (width//2, height))  # (视频储存位置和名称，储存格式，帧率，视频大小)
-right = cv2.VideoWriter(f'/home/nvidia/new_rec2/followmanta_sesssion/log/right{time.ctime()}.avi', fourcc, 5.0, (width//2, height))
-
+# --------------------------------------------------------------------------- #
+# Main loop
+# --------------------------------------------------------------------------- #
 while cap.isOpened():
     ret, frame = cap.read()
-    print('ret:', ret)
-
-    # left_frame = frame[0:height, 0:width//2]  # 裁剪坐标为[y0:y1，x0：x1]
-    # right_frame = frame[0:height, width // 2 : width]
-
-    frame1_ = frame[0 : height, 0 : width // 2] # 左侧相机
-    frame2_ = frame[0 : height, width // 2 : 1280] # 右侧相机
-
-    right_frame = cv2.flip(frame2_, -1)  # 旋转180
-    left_frame = cv2.flip(frame1_, -1)  # 旋转180
-
     if not ret:
         break
 
-    left.write(left_frame)
-    right.write(right_frame)
+    left_frame = frame[:, :width // 2]
+    right_frame = frame[:, width // 2:]
+
+    left_frame = cv2.flip(left_frame, -1)
+    right_frame = cv2.flip(right_frame, -1)
+
+    left_writer.write(left_frame)
+    right_writer.write(right_frame)
+
     cv2.imshow('left', left_frame)
     cv2.imshow('right', right_frame)
 
     if cv2.waitKey(1) == ord('q'):
         break
 
+# --------------------------------------------------------------------------- #
+# Cleanup
+# --------------------------------------------------------------------------- #
 cap.release()
-left.release()
-right.release()
+left_writer.release()
+right_writer.release()
 cv2.destroyAllWindows()

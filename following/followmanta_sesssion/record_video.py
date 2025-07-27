@@ -1,46 +1,71 @@
-import cv2  
+# Copyright 2025 Beijing Jiaotong University (BJTU). All rights reserved.
+
 import time
-  
-def record_video(save_path, duration=10):  
-    # 打开摄像头  
+from pathlib import Path
+
+import cv2
+
+# --------------------------------------------------------------------------- #
+# Constants
+# --------------------------------------------------------------------------- #
+DEFAULT_SAVE_PATH = Path('output.avi')
+DEFAULT_FPS = 20.0
+DEFAULT_DUR = 10  # seconds
+DEFAULT_RES = (1280, 480)
+
+
+# --------------------------------------------------------------------------- #
+# Public API
+# --------------------------------------------------------------------------- #
+def record_video(save_path: str | Path = DEFAULT_SAVE_PATH,
+                 duration: float = DEFAULT_DUR,
+                 fps: float = DEFAULT_FPS,
+                 resolution: tuple[int, int] = DEFAULT_RES) -> None:
+    """Record video from the default webcam.
+
+    Args:
+        save_path: Output file path.
+        duration:  Recording length in seconds.
+        fps:       Frames per second.
+        resolution: (width, height).
+    """
     cap = cv2.VideoCapture(0)
-  
-    # 定义编解码器和创建VideoWriter对象  
+    if not cap.isOpened():
+        raise RuntimeError('Cannot open camera.')
+
     fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    out = cv2.VideoWriter(save_path, fourcc, 20.0, (1280,  480))  
-  
-    # 录制视频  
-    count = 0  
-    while(cap.isOpened()):  
-        start = time.time()
-        ret, frame = cap.read()  
-        if ret:  
-            # 如果需要，可以在这里处理frame  
-            # frame = cv2.flip(frame, 0)  # 翻转帧，作为示例  
-  
-            # 写入帧到视频文件  
-            # out.write(frame)  
-  
-            # 显示结果帧  
-            # cv2.imshow('frame', frame)  
-            pass
-  
-            # 按'q'退出循环  
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break  
-              
-            # 如果设置了录制时长，则退出循环  
-            # if count >= duration * 20:  # 假设帧率为20fps  
-            #     break  
-            # count += 1  
-        else:  
-            break  
-        print('time---', time.time()-start)
-  
-    # 释放捕获和销毁所有窗口  
-    cap.release()  
-    out.release()  
-    cv2.destroyAllWindows()  
-  
-# 调用函数录制视频，保存为output.avi，录制时长为10秒  
-record_video('output.avi', 10)
+    out = cv2.VideoWriter(str(save_path), fourcc, fps, resolution)
+
+    frames_to_record = int(duration * fps)
+    frame_count = 0
+
+    try:
+        while cap.isOpened() and frame_count < frames_to_record:
+            t0 = time.perf_counter()
+            ok, frame = cap.read()
+            if not ok:
+                break
+
+            # Optional processing: e.g., cv2.flip(frame, 0)
+            out.write(frame)
+
+            # Display feedback (optional)
+            # cv2.imshow('recording', frame)
+            # if cv2.waitKey(1) & 0xFF == ord('q'):
+            #     break
+
+            elapsed = time.perf_counter() - t0
+            print(f'Frame {frame_count + 1}/{frames_to_record}, '
+                  f'elapsed: {elapsed:.3f}s')
+            frame_count += 1
+    finally:
+        cap.release()
+        out.release()
+        cv2.destroyAllWindows()
+
+
+# --------------------------------------------------------------------------- #
+# Entry point
+# --------------------------------------------------------------------------- #
+if __name__ == '__main__':
+    record_video()

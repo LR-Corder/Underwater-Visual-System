@@ -1,160 +1,148 @@
+# Copyright 2025 Beijing Jiaotong University (BJTU). All rights reserved.
+
 import cv2
 import numpy as np
 
+# --------------------------------------------------------------------------- #
+# Contour extraction
+# --------------------------------------------------------------------------- #
+def extract_contours(image: np.ndarray) -> tuple[np.ndarray, list]:
+    """Find outer contours twice; return visualisation and contour list."""
+    cv2.rectangle(image, (0, 0), (image.shape[1], image.shape[0]),
+                  (255, 255, 0), 30, 4, 0)
 
-def contours_find(src):
-
-    # 在边缘添加矩形边
-    cv2.rectangle(src, (0, 0), (src.shape[1], src.shape[0]), (255, 255, 0), 30, 4, 0)
-
-    # 将bgr图片转换成灰度图
-    gray = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
-
-    # 对图像进行边缘提取
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 20, 40, apertureSize=3)
 
-    # 第一次找到轮廓
     contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    dst = np.zeros_like(src)
+    mask = np.zeros_like(image)
+    cv2.drawContours(mask, contours, -1, (255, 255, 255), 5)
 
-    for contour in contours:
-        cv2.drawContours(dst, [contour], -1, (255, 255, 255), 5)
-    # 对画出来的轮廓图转成灰度图
-    dst_gray = cv2.cvtColor(dst, cv2.COLOR_RGB2GRAY)
-    # 第二次找到轮廓
-    contours, _ = cv2.findContours(dst_gray, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-    dst = np.zeros_like(dst)
+    gray_mask = cv2.cvtColor(mask, cv2.COLOR_RGB2GRAY)
+    contours, _ = cv2.findContours(gray_mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-    for contour in contours:
+    dst = np.zeros_like(mask)
+    for cnt in contours:
         color = np.random.randint(0, 255, (3,)).tolist()
-        cv2.drawContours(dst, [contour], -1, color, 5)
-    return dst,contours
+        cv2.drawContours(dst, [cnt], -1, color, 5)
+
+    return dst, contours
 
 
-def Bundle_sort(pa):
-    count_Pointsize = len(pa)
+# --------------------------------------------------------------------------- #
+# Utilities
+# --------------------------------------------------------------------------- #
+class Point3d:
+    def __init__(self, x: float, y: float, z: float) -> None:
+        self.x, self.y, self.z = x, y, z
 
-    for count_area1 in range(count_Pointsize - 1):
-        flag_area = False
-        for count_area2 in range(count_Pointsize - 1 - count_area1):
-            if type(pa[count_area2+1])==int:
-                break
-            if pa[count_area2][2] > pa[count_area2 + 1][2]:
-                pa[count_area2],pa[count_area2+1] =pa[count_area2+1],pa[count_area2]
-                flag_area = True
 
-        if not flag_area:
+def _sort_by_area(points: list) -> None:
+    """In-place bubble sort on third element (area)."""
+    n = len(points)
+    for i in range(n - 1):
+        swapped = False
+        for j in range(n - 1 - i):
+            if points[j][2] > points[j + 1][2]:
+                points[j], points[j + 1] = points[j + 1], points[j]
+                swapped = True
+        if not swapped:
             break
 
 
+def _compute_centroids(
+    dst: np.ndarray,
+    contours: list,
+    points: list,
+    depth: np.ndarray
+) -> int:
+    """Fill `points` with centroid and bbox info; return count."""
+    count = 0
+    for cnt in contours:
+        if cv2.contourArea(cnt) <= 1000:
+            continue
+        temp = np.array(cnt)
+        moments = cv2.moments(temp)
+        if moments['m00'] == 0:
+            continue
+
+        x = int(moments['m10'] / moments['m00'])
+        y = int(moments['m01'] / moments['m00'])
+
+        left = tuple(temp[temp[:, :, 0].argmin()][0])
+        right = tuple(temp[temp[:, :, 0].argmax()][0])
+        top = tuple(temp[temp[:, :, 1].argmin()][0])
+        bottom = tuple(temp[temp[:, :, 1].argmax()][0])
+
+        points[count] = (x, y, int(cv2.contourArea(cnt)), left, right, top, bottom)
+        cv2.circle(dst, (x, y), 1, (0, 255, 255), 30)
+        count += 1
+    return count
 
 
-# 定义Point3d类
-class Point3d:
-    def __init__(self, x, y, z):
-        self.x = x
-        self.y = y
-        self.z = z
+def _nms_filter(
+    canvas: np.ndarray,
+    input_points: list,
+    output_points: list,
+    count: int,
+    depth: np.ndarray
+) -> tuple[list, list]:
+    """Non-max suppression and distance-based classification."""
+    targets, objects = [], []
+    threshold = 50
+    buffer = [Point3d(0, 0, 0) for _ in range(100)]
 
-def compute_center_of_gravity(dst2, contours, contours_size, pa,depth):
-    count_Pointsize = 0
-    pt =[0] * 100
-    for i in range(contours_size):
-        if cv2.contourArea(contours[i]) > 1000:
-            temp = np.array(contours[i])
-            leftmost = tuple(temp[temp[:, :, 0].argmin()][0])
-            rightmost = tuple(temp[temp[:, :, 0].argmax()][0])
-            topmost = tuple(temp[temp[:, :, 1].argmin()][0])
-            bottommost = tuple(temp[temp[:, :, 1].argmax()][0])
-            color = (0, 255, 255)
-            moment = cv2.moments(temp, False)
-            if moment['m00'] != 0:
-                x = int(moment['m10'] / moment['m00'])  # 计算重心横坐标
-                y = int(moment['m01'] / moment['m00'])  # 计算重心纵坐标
+    idx = 0
+    while count:
+        buffer[idx] = input_points[count - 1]
+        p = buffer[idx]
 
-                x_rect, y_rect, width, height = cv2.boundingRect(temp)
+        left, right, top, bottom = p[3], p[4], p[5], p[6]
 
-
-                p = (x, y)  # 重心坐标
-                cv2.circle(dst2, p, 1, color, 30, 8)  # 原图画出重心坐标
-                # pa[count_Pointsize] = (x, y, int(cv2.contourArea(contours[i], False)))
-                pa[count_Pointsize] = (x, y, int(cv2.contourArea(contours[i], False)), leftmost,rightmost,topmost,bottommost)
-                count_Pointsize += 1
-
-    return count_Pointsize
-
-def nms_point(White, pa, pb, count_Pointsize,threeD):
-    result_target = []
-    result_object = []
-    index_size = count_Pointsize
-    index_result = 0
-    threshold_set = 50
-    p = []
-
-    while index_size > 0:
-        pb[index_result] = pa[index_size - 1]
-        leftmost = pb[index_result][3]
-        rightmost = pb[index_result][4]
-        topmost = pb[index_result][5]
-        bottommost = pb[index_result][6]
-        p.append((pb[index_result][0], pb[index_result][1],leftmost ,rightmost ,topmost ,bottommost ))
-
-
-
-
-        count_point = 0
-        while count_point < index_size - 1:
-            distance = np.sqrt(
-                (pb[index_result][0] - pa[count_point][0]) ** 2 + (pb[index_result][1] - pa[count_point][1]) ** 2)
-
-            if distance < threshold_set:
-                for count_point2 in range(count_point, index_size - 1):
-                    pa[count_point2] = pa[count_point2 + 1]
-                index_size -= 1
+        # NMS
+        i = 0
+        while i < count - 1:
+            dist = np.linalg.norm(
+                np.array([p[0], p[1]]) - np.array([input_points[i][0], input_points[i][1]])
+            )
+            if dist < threshold:
+                del input_points[i]
+                count -= 1
             else:
-                count_point += 1
+                i += 1
+        count -= 1
+        idx += 1
 
-        index_size -= 1
-        index_result += 1
+    for i in range(idx):
+        x, y = buffer[i][:2]
+        area = buffer[i][2]
+        length = abs(depth[buffer[i][3][1], buffer[i][3][0], 0] -
+                     depth[buffer[i][4][1], buffer[i][4][0], 0])
+        width = abs(depth[buffer[i][5][1], buffer[i][5][0], 0] -
+                    depth[buffer[i][6][1], buffer[i][6][0], 0])
 
-    for nms_point in range(index_result):
-        y =p[nms_point][1]
-        x =p[nms_point][0]
-        area = pb[nms_point][2]
-        chang =abs(threeD[ p[nms_point][2][1]][p[nms_point][2][1]]-threeD[p[nms_point][3][1]][p[nms_point][3][1]])
-        kuan = abs(threeD[p[nms_point][4][1]][p[nms_point][4][1]]-threeD[p[nms_point][5][1]][p[nms_point][5][1]])
-        # ----------------设置距离--------------------------
-        if abs(threeD[y][x][2])<8:
-            cv2.circle(White, (p[nms_point][0], p[nms_point][1]), 1, (0, 0, 255), 30, 8)
-            # print("target:",p[nms_point][0], p[nms_point][1],area,chang,kuan)
-            result_target.append([p[nms_point][0], p[nms_point][1],area,chang,kuan])
-
+        if abs(depth[y, x, 2]) < 8:           # target distance filter
+            cv2.circle(canvas, (x, y), 1, (0, 0, 255), 30)
+            targets.append([x, y, area, length, width])
         else:
-            cv2.circle(White, (p[nms_point][0], p[nms_point][1]), 1, (0, 255, 255), 30, 8)
-            result_object.append([p[nms_point][0], p[nms_point][1],area,chang,kuan])
+            cv2.circle(canvas, (x, y), 1, (0, 255, 255), 30)
+            objects.append([x, y, area, length, width])
 
-    cv2.imshow("final_result", White)
-    # for i in result_object:
-    #
-
-    return result_target,result_object
-
-def result_point(src,threeD):  #depth ---> [point]   point = (x,y)
+    cv2.imshow("final_result", canvas)
+    return targets, objects
 
 
-    pa = [0]*100
-    pb = []
-    contours = []
-    if src is None:
-        print("can not load this pic!")
-        exit(0)
+# --------------------------------------------------------------------------- #
+# Public API
+# --------------------------------------------------------------------------- #
+def detect_targets(src: np.ndarray, depth: np.ndarray) -> list:
+    """Main entry: extract targets from RGB and depth."""
+    points = [None] * 100
+    dst, contours = extract_contours(src)
 
-    White = src
-    dst,contours = contours_find(src)
+    count = _compute_centroids(dst, contours, points, depth)
+    _sort_by_area(points)
 
-    count_Pointsize = compute_center_of_gravity(dst, contours,len(contours),pa,src)
-
-    Bundle_sort(pa)
-    pb = [Point3d(0, 0, 0) for _ in range(100)]
-    result_target,result_object = nms_point(White, pa, pb, count_Pointsize,threeD)
-    return result_target
+    buffer = [Point3d(0, 0, 0) for _ in range(100)]
+    targets, _ = _nms_filter(src, points, buffer, count, depth)
+    return targets
