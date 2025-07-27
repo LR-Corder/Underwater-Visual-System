@@ -1,19 +1,19 @@
+# Copyright 2025 Beijing Jiaotong University (BJTU). All rights reserved.
+
 import time
-global task_times
+
+# Global task timing dictionary
 task_times = {}
-def start(name):
-    """开始计时"""
+
+def start(name: str) -> None:
+    """Start timing for a task."""
     task_times[name] = time.time()
-def end(name):
-    """结束计时并打印"""
+
+def end(name: str) -> None:
+    """End timing for a task and print elapsed time."""
     if name not in task_times:
-        print(f"任务 {name} 未开始计时！")
+        print(f"Task {name} has not been started!")
         return
     start_time = task_times.pop(name)
-    end_time = time.time()
-    elapsed_time = end_time - start_time
-
-    print(f"{name} 消耗时间：{elapsed_time:.6f}秒")
-
-
-
+    elapsed_time = time.time() - start_time
+    print(f"{name} elapsed time: {elapsed_time:.6f} seconds")
