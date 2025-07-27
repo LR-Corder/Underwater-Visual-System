@@ -13,7 +13,7 @@ SAVE_FLAG = True
 
 
 def rotation_matrix_to_quaternion(matrix: np.ndarray) -> np.ndarray:
-    """Convert 3×3 rotation matrix to quaternion [x, y, z, w]."""
+    """Convert 3*3 rotation matrix to quaternion [x, y, z, w]."""
     q_w = np.sqrt(1.0 + np.trace(matrix)) / 2.0
     q_x = (matrix[2, 1] - matrix[1, 2]) / (4 * q_w)
     q_y = (matrix[0, 2] - matrix[2, 0]) / (4 * q_w)
